@@ -23,19 +23,24 @@ export default function AddProductForm({ user }) {
 
     setLoading(true);
 
-    const formData = new FormData();
-    formData.append("url", url);
+    try {
+      const formData = new FormData();
+      formData.append("url", url);
 
-    const result = await addProduct(formData);
+      const result = await addProduct(formData);
 
-    if (result.error) {
-      toast.error(result.error);
-    } else {
+      if (result.error) {
+        toast.error(result.error);
+        return;
+      }
+
       toast.success(result.message || "Product tracked successfully!");
       setUrl("");
+    } catch (error) {
+      toast.error(error.message || "Something went wrong.");
+    } finally {
+      setLoading(false);
     }
-
-    setLoading(false);
   };
 
   return (
@@ -46,7 +51,7 @@ export default function AddProductForm({ user }) {
             type="url"
             value={url}
             onChange={(e) => setUrl(e.target.value)}
-            placeholder="Paste product URL (Amazon, Walmart, etc.)"
+            placeholder="Paste product URL (Amazon, Flipkart, Croma...)"
             className="h-12 text-base"
             required
             disabled={loading}

@@ -15,7 +15,7 @@ export async function POST(request) {
     // Use service role to bypass RLS
     const supabase = createClient(
       process.env.NEXT_PUBLIC_SUPABASE_URL,
-      process.env.SUPABASE_SERVICE_ROLE_KEY
+      process.env.SUPABASE_SERVICE_ROLE_KEY,
     );
 
     const { data: products, error: productsError } = await supabase
@@ -53,6 +53,12 @@ export async function POST(request) {
             currency: productData.currencyCode || product.currency,
             name: productData.productName || product.name,
             image_url: productData.productImageUrl || product.image_url,
+            brand: productData.brand || product.brand,
+            model: productData.model || product.model,
+            gtin: productData.gtin || product.gtin,
+            original_price: productData.originalPrice ?? product.original_price,
+            availability: productData.availability || product.availability,
+            last_checked_at: new Date().toISOString(),
             updated_at: new Date().toISOString(),
           })
           .eq("id", product.id);
@@ -76,7 +82,7 @@ export async function POST(request) {
                 user.email,
                 product,
                 oldPrice,
-                newPrice
+                newPrice,
               );
 
               if (emailResult.success) {

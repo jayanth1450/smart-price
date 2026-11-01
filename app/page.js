@@ -23,10 +23,11 @@ export default async function Home() {
     },
     {
       icon: Shield,
-      title: "Always Reliable",
+      title: "Multi-Platform Comparison",
       description:
-        "Works across all major e-commerce sites with built-in anti-bot protection",
+        "Compare matching product listings from supported online stores in one place",
     },
+    ,
     {
       icon: Bell,
       title: "Smart Alerts",
@@ -64,8 +65,8 @@ export default async function Home() {
             Never Miss a Price Drop
           </h2>
           <p className="text-xl text-gray-600 mb-12 max-w-2xl mx-auto">
-            Track prices from any e-commerce site. Get instant alerts when
-            prices drop!. Save money effortlessly.
+            Track products, compare prices across supported shopping platforms,
+            and monitor price history to find better deals.
           </p>
 
           <AddProductForm user={user} />
@@ -95,10 +96,11 @@ export default async function Home() {
         <section className="max-w-7xl mx-auto px-4 pb-20">
           <div className="flex items-center justify-between mb-6">
             <h3 className="text-2xl font-bold text-gray-900">
-              Your Tracked Products
+              Your Price Comparisons
             </h3>
             <span className="text-sm text-gray-500">
-              {products.length} {products.length === 1 ? "product" : "products"}
+              {products.length}{" "}
+              {products.length === 1 ? "comparison" : "comparisons"}
             </span>
           </div>
 
