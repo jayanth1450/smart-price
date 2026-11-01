@@ -1,3 +1,4 @@
+
 "use server";
 
 import { createClient } from "@/utils/supabase/server";
@@ -6,45 +7,60 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 
 export async function addProduct(formData) {
-  const url = formData.get("url");
+  const url = String(formData.get("url") || "").trim();
 
   if (!url) {
-    return { error: "URL is required" };
+    return { error: "Product URL is required." };
   }
 
   try {
     const supabase = await createClient();
+
     const {
       data: { user },
+      error: authError
     } = await supabase.auth.getUser();
 
-    if (!user) {
-      return { error: "Not authenticated" };
+    if (authError || !user) {
+      return { error: "Please log in to track products." };
     }
 
-    // Scrape product data with Firecrawl
+    // Extract product information using Firecrawl JSON API.
     const productData = await scrapeProduct(url);
 
-    if (!productData.productName || !productData.currentPrice) {
-      console.log(productData, "productData");
-      return { error: "Could not extract product information from this URL" };
+    if (
+      !productData.productName ||
+      !Number.isFinite(productData.currentPrice) ||
+      productData.currentPrice <= 0
+    ) {
+      return {
+        error: "Could not extract valid product information."
+      };
     }
 
-    const newPrice = parseFloat(productData.currentPrice);
-    const currency = productData.currencyCode || "USD";
+    const newPrice = productData.currentPrice;
+    const currency = productData.currencyCode || "INR";
 
-    // Check if product exists to determine if it's an update
-    const { data: existingProduct } = await supabase
+    // Check whether the product already exists.
+    const {
+      data: existingProduct,
+      error: lookupError
+    } = await supabase
       .from("products")
       .select("id, current_price")
       .eq("user_id", user.id)
       .eq("url", url)
-      .single();
+      .maybeSingle();
+
+    if (lookupError) throw lookupError;
 
     const isUpdate = !!existingProduct;
 
-    // Upsert product (insert or update based on user_id + url)
-    const { data: product, error } = await supabase
+    // Insert or update product.
+    const {
+      data: product,
+      error: productError
+    } = await supabase
       .from("products")
       .upsert(
         {
@@ -52,59 +68,85 @@ export async function addProduct(formData) {
           url,
           name: productData.productName,
           current_price: newPrice,
-          currency: currency,
+          currency,
           image_url: productData.productImageUrl,
-          updated_at: new Date().toISOString(),
+          updated_at: new Date().toISOString()
         },
         {
-          onConflict: "user_id,url", // Unique constraint on user_id + url
-          ignoreDuplicates: false, // Always update if exists
+          onConflict: "user_id,url"
         }
       )
       .select()
       .single();
 
-    if (error) throw error;
+    if (productError) throw productError;
 
-    // Add to price history if it's a new product OR price changed
+    // Add history only when the price changes.
     const shouldAddHistory =
-      !isUpdate || existingProduct.current_price !== newPrice;
+      !isUpdate ||
+      Number(existingProduct.current_price) !== newPrice;
 
     if (shouldAddHistory) {
-      await supabase.from("price_history").insert({
-        product_id: product.id,
-        price: newPrice,
-        currency: currency,
-      });
+      const { error: historyError } = await supabase
+        .from("price_history")
+        .insert({
+          product_id: product.id,
+          price: newPrice,
+          currency
+        });
+
+      if (historyError) {
+        console.error("Price history insertion failed:", historyError);
+        throw historyError;
+      }
     }
 
     revalidatePath("/");
+
     return {
       success: true,
       product,
       message: isUpdate
         ? "Product updated with latest price!"
-        : "Product added successfully!",
+        : "Product added successfully!"
     };
+
   } catch (error) {
     console.error("Add product error:", error);
-    return { error: error.message || "Failed to add product" };
+
+    return {
+      error: error.message || "Failed to add product."
+    };
   }
 }
 
 export async function deleteProduct(productId) {
   try {
     const supabase = await createClient();
+
+    const {
+      data: { user },
+      error: authError
+    } = await supabase.auth.getUser();
+
+    if (authError || !user) {
+      return { error: "Not authenticated." };
+    }
+
     const { error } = await supabase
       .from("products")
       .delete()
-      .eq("id", productId);
+      .eq("id", productId)
+      .eq("user_id", user.id);
 
     if (error) throw error;
 
     revalidatePath("/");
+
     return { success: true };
+
   } catch (error) {
+    console.error("Delete product error:", error);
     return { error: error.message };
   }
 }
@@ -112,13 +154,24 @@ export async function deleteProduct(productId) {
 export async function getProducts() {
   try {
     const supabase = await createClient();
+
+    const {
+      data: { user },
+      error: authError
+    } = await supabase.auth.getUser();
+
+    if (authError || !user) return [];
+
     const { data, error } = await supabase
       .from("products")
       .select("*")
+      .eq("user_id", user.id)
       .order("created_at", { ascending: false });
 
     if (error) throw error;
+
     return data || [];
+
   } catch (error) {
     console.error("Get products error:", error);
     return [];
@@ -128,6 +181,25 @@ export async function getProducts() {
 export async function getPriceHistory(productId) {
   try {
     const supabase = await createClient();
+
+    const {
+      data: { user },
+      error: authError
+    } = await supabase.auth.getUser();
+
+    if (authError || !user) return [];
+
+    // Verify product ownership before reading history.
+    const { data: product, error: productError } = await supabase
+      .from("products")
+      .select("id")
+      .eq("id", productId)
+      .eq("user_id", user.id)
+      .maybeSingle();
+
+    if (productError) throw productError;
+    if (!product) return [];
+
     const { data, error } = await supabase
       .from("price_history")
       .select("*")
@@ -135,7 +207,9 @@ export async function getPriceHistory(productId) {
       .order("checked_at", { ascending: true });
 
     if (error) throw error;
+
     return data || [];
+
   } catch (error) {
     console.error("Get price history error:", error);
     return [];
@@ -144,7 +218,9 @@ export async function getPriceHistory(productId) {
 
 export async function signOut() {
   const supabase = await createClient();
+
   await supabase.auth.signOut();
+
   revalidatePath("/");
   redirect("/");
 }
